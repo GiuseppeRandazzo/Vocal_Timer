@@ -1,12 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  AlertCircle, 
-  X, 
-  ChevronRight
-} from 'lucide-react';
-import { Navbar } from './components/Navbar';
+import React, { useEffect, useState } from 'react';
+import { KeyRound, X } from 'lucide-react';
+import { AppTab, Navbar } from './components/Navbar';
 import { CircularTimer } from './components/Timer/CircularTimer';
 import { ExerciseCard } from './components/Timer/ExerciseCard';
+import { SessionTimeline } from './components/Timer/SessionTimeline';
 import { ExerciseLibrary } from './components/ExerciseLibrary/ExerciseLibrary';
 import { SessionBuilder } from './components/SessionBuilder/SessionBuilder';
 import { StatsModal } from './components/Stats/StatsModal';
@@ -17,10 +14,11 @@ import { FocusModeModal } from './components/FocusMode/FocusModeModal';
 import { useTimerStore } from './store/useTimerStore';
 import { useSessionStore } from './store/useSessionStore';
 import { useSettingsStore } from './store/useSettingsStore';
+import { usePersistentState } from './lib/ui';
 import { Exercise } from './types';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'timer' | 'exercises' | 'builder' | 'stats'>('timer');
+  const [activeTab, setActiveTab] = useState<AppTab>('timer');
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -29,25 +27,79 @@ export const App: React.FC = () => {
   const [verificationExercise, setVerificationExercise] = useState<Exercise | null>(null);
   const [showKeyBanner, setShowKeyBanner] = useState(true);
 
-  const { currentExercise, initExercise } = useTimerStore();
-  const { activeQueue, currentQueueIndex } = useSessionStore();
-  const hasGroq = useSettingsStore((state) => state.hasGroqKey());
-  const hasHf = useSettingsStore((state) => state.hasHfKey());
+  const [highlightPhonemes, setHighlightPhonemes] = usePersistentState<boolean>(
+    'vt_studio_highlight',
+    true
+  );
 
-  // Inizializza l'esercizio corrente alla partenza se non impostato
+  const {
+    status,
+    currentExercise,
+    initExercise,
+    start,
+    pause,
+    resume,
+    nextExercise,
+    prevExercise,
+  } = useTimerStore();
+  const { activeQueue, currentQueueIndex } = useSessionStore();
+  const hasGroq = useSettingsStore((s) => s.hasGroqKey());
+  const hasHf = useSettingsStore((s) => s.hasHfKey());
+
+  // Inizializza l'esercizio corrente alla partenza
   useEffect(() => {
     if (!currentExercise && activeQueue.length > 0) {
       initExercise(activeQueue[currentQueueIndex] || activeQueue[0]);
     }
   }, [currentExercise, activeQueue, currentQueueIndex, initExercise]);
 
-  // Se l'utente clicca il tab stats, apriamo la modale stats
+  // Scorciatoie globali da tastiera quando nessuna modale è aperta
   useEffect(() => {
-    if (activeTab === 'stats') {
-      setIsStatsOpen(true);
-      setActiveTab('timer');
-    }
-  }, [activeTab]);
+    const anyModal =
+      isAIModalOpen ||
+      isSettingsOpen ||
+      isStatsOpen ||
+      isFocusModeOpen ||
+      isVoiceVerificationOpen;
+    if (anyModal || activeTab !== 'timer') return;
+
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (status === 'running') pause();
+        else if (status === 'paused') resume();
+        else start();
+      } else if (e.code === 'KeyF') {
+        e.preventDefault();
+        setIsFocusModeOpen(true);
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        nextExercise();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        prevExercise();
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    activeTab,
+    isAIModalOpen,
+    isSettingsOpen,
+    isStatsOpen,
+    isFocusModeOpen,
+    isVoiceVerificationOpen,
+    status,
+    start,
+    pause,
+    resume,
+    nextExercise,
+    prevExercise,
+  ]);
 
   const handleOpenVoiceVerification = (exercise?: Exercise) => {
     const target = exercise || currentExercise || activeQueue[0];
@@ -58,139 +110,124 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-studio-darkest text-studio-text flex flex-col font-sans selection:bg-cyan-neon selection:text-black">
-      
-      {/* Navigation Header */}
+    <div className="flex min-h-screen flex-col pb-20 lg:pb-0">
+      {/* Header Console */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenAIModal={() => setIsAIModalOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenFocusMode={() => setIsFocusModeOpen(true)}
+        onOpenStats={() => setIsStatsOpen(true)}
       />
 
-      {/* Banner Notifica Graceful Degradation (se mancano le chiavi) */}
+      {/* Striscia avviso se mancano le chiavi AI */}
       {showKeyBanner && (!hasGroq || !hasHf) && (
-        <div className="bg-gradient-to-r from-violet-950/80 via-studio-panel to-cyan-950/80 border-b border-studio-border px-4 py-2.5">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-slate-200 overflow-hidden">
-              <AlertCircle className="w-4 h-4 text-cyan-neon shrink-0" />
+        <div className="border-b border-ink-800 bg-ink-900/90 px-4 py-2">
+          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 text-xs">
+            <div className="flex min-w-0 items-center gap-2.5 text-ink-300">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cue" />
               <p className="truncate">
-                <strong>Modalità Studio Offline attiva:</strong> Libreria completa con 12 esercizi per dizione pronta. Per generare nuovi scioglilingua AI e trascrivere con Whisper, inserisci le API keys nelle Impostazioni.
+                <strong className="font-medium text-ink-100">Modalità locale attiva</strong> — 12 copioni di dizione pronti. Collega Groq e Hugging Face per sbloccare generazione AI e trascrizione Whisper.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="px-2.5 py-1 rounded-lg bg-cyan-neon text-black font-bold text-[11px] hover:bg-cyan-400 transition-all"
+                className="inline-flex items-center gap-1.5 rounded-md border border-cue/40 bg-cue/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-cue hover:bg-cue/20"
               >
-                Configura Chiavi
+                <KeyRound className="h-3 w-3" />
+                Chiavi API
               </button>
               <button
                 onClick={() => setShowKeyBanner(false)}
-                className="p-1 rounded-md text-studio-muted hover:text-white transition-all"
-                title="Nascondi avviso"
+                className="rounded p-1 text-ink-500 hover:text-ink-200"
+                aria-label="Chiudi avviso"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        
-        {/* Tab 1: Studio Timer */}
+      {/* Area operativa principale */}
+      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-8 sm:py-9">
         {activeTab === 'timer' && (
-          <div className="space-y-8 animate-in fade-in duration-300">
-            {/* Split layout: Sinistra Timer Circolare & Controlli, Destra Card Esercizio con Fonema & Tips */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-              
-              {/* Colonna Sinistra: Circular Timer */}
-              <div className="lg:col-span-5 flex flex-col items-center justify-center bg-studio-darker/60 border border-studio-border rounded-3xl p-6 sm:p-8 shadow-xl">
-                <CircularTimer
-                  onOpenVoiceVerification={() => handleOpenVoiceVerification()}
+          <div className="space-y-6 animate-rise">
+            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
+              {/* Modulo 1: Orologio Broadcast & Transport */}
+              <section
+                className="panel flex flex-col justify-between p-6 sm:p-8 lg:col-span-5"
+                aria-label="Orologio e controlli del timer"
+              >
+                <div className="mb-4 flex items-center justify-between border-b border-ink-800 pb-3">
+                  <span className="silk text-ink-400">CH-01 · Master Clock</span>
+                  <span className="silk">1000 Hz Sync</span>
+                </div>
+
+                <div className="my-auto py-2">
+                  <CircularTimer
+                    onOpenVoiceVerification={() => handleOpenVoiceVerification()}
+                  />
+                </div>
+              </section>
+
+              {/* Modulo 2: Copione sul leggio */}
+              <div className="lg:col-span-7">
+                <ExerciseCard
+                  exercise={currentExercise}
+                  highlight={highlightPhonemes}
+                  onToggleHighlight={() => setHighlightPhonemes(!highlightPhonemes)}
                 />
               </div>
-
-              {/* Colonna Destra: Exercise Card */}
-              <div className="lg:col-span-7">
-                <ExerciseCard exercise={currentExercise} />
-              </div>
-
             </div>
 
-            {/* Quick Session Queue Bar */}
-            <div className="p-4 rounded-2xl bg-studio-darker border border-studio-border flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3 overflow-x-auto">
-                <span className="text-xs font-mono font-bold text-studio-muted uppercase tracking-wider shrink-0">
-                  In Scaletta:
-                </span>
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-                  {activeQueue.map((ex, idx) => (
-                    <button
-                      key={`${ex.id}-${idx}`}
-                      onClick={() => {
-                        useSessionStore.getState().setCurrentQueueIndex(idx);
-                        initExercise(ex);
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                        idx === currentQueueIndex
-                          ? 'bg-cyan-neon/15 text-cyan-neon border border-cyan-neon/40 shadow-sm'
-                          : 'bg-studio-panel text-studio-muted hover:text-white border border-studio-border/50'
-                      }`}
-                    >
-                      <span className="font-mono text-[10px] opacity-70">#{idx + 1}</span>
-                      <span className="max-w-[140px] truncate">{ex.title}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setActiveTab('builder')}
-                className="text-xs text-cyan-neon hover:underline font-medium flex items-center gap-1 shrink-0"
-              >
-                <span>Gestisci Scaletta</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {/* Modulo 3: Timeline della scaletta */}
+            <SessionTimeline onManage={() => setActiveTab('builder')} />
           </div>
         )}
 
-        {/* Tab 2: Libreria Esercizi */}
         {activeTab === 'exercises' && (
-          <div className="animate-in fade-in duration-300">
-            <ExerciseLibrary
-              onSelectForVerification={(ex) => handleOpenVoiceVerification(ex)}
-              onOpenTimer={() => setActiveTab('timer')}
-              onOpenAIModal={() => setIsAIModalOpen(true)}
-            />
-          </div>
+          <ExerciseLibrary
+            onSelectForVerification={(ex) => handleOpenVoiceVerification(ex)}
+            onOpenTimer={() => setActiveTab('timer')}
+            onOpenAIModal={() => setIsAIModalOpen(true)}
+          />
         )}
 
-        {/* Tab 3: Session Builder */}
         {activeTab === 'builder' && (
-          <div className="animate-in fade-in duration-300">
-            <SessionBuilder
-              onOpenTimer={() => setActiveTab('timer')}
-              onOpenExerciseLibrary={() => setActiveTab('exercises')}
-            />
-          </div>
+          <SessionBuilder
+            onOpenTimer={() => setActiveTab('timer')}
+            onOpenExerciseLibrary={() => setActiveTab('exercises')}
+          />
         )}
-
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-studio-border bg-studio-darkest py-4 px-4 text-center text-xs text-studio-muted">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Vocal Timer • Pro Dubbing & Voice Warmup Suite</span>
-          <span className="text-[11px] font-mono">Web Audio API • Groq Llama 3 • Whisper STT</span>
+      {/* Piede console */}
+      <footer className="border-t border-ink-800/70 bg-ink-950/80 px-4 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-[1400px] flex-col items-center justify-between gap-2 text-xs text-ink-500 sm:flex-row">
+          <div className="flex items-center gap-3">
+            <span className="silk text-ink-400">Vocal Timer · VT-1</span>
+            <span className="hidden h-3 w-px bg-ink-800 sm:inline-block" />
+            <span className="hidden sm:inline">Console di riscaldamento vocale & dizione italiana</span>
+          </div>
+
+          <div className="flex items-center gap-4 font-mono text-[10px] text-ink-500">
+            <span>
+              <strong className="text-ink-300">[Spazio]</strong> Play/Pausa
+            </span>
+            <span>
+              <strong className="text-ink-300">[← / →]</strong> Take
+            </span>
+            <span>
+              <strong className="text-ink-300">[F]</strong> Leggio
+            </span>
+          </div>
         </div>
       </footer>
 
-      {/* Modali Globali */}
+      {/* Modali di sistema */}
       <AIGeneratorModal
         isOpen={isAIModalOpen}
         onClose={() => setIsAIModalOpen(false)}
@@ -224,8 +261,8 @@ export const App: React.FC = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
-
     </div>
   );
 };
+
 export default App;

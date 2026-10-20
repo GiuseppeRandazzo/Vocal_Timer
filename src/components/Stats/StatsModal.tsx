@@ -1,15 +1,8 @@
 import React from 'react';
-import { 
-  Flame, 
-  Clock, 
-  CheckCircle2, 
-  Calendar, 
-  Trophy, 
-  History, 
-  Sparkles,
-  X
-} from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, Flame, History } from 'lucide-react';
 import { useSessionStore } from '../../store/useSessionStore';
+import { pad2 } from '../../lib/ui';
+import { Modal } from '../ui/Modal';
 
 interface StatsModalProps {
   isOpen: boolean;
@@ -18,8 +11,6 @@ interface StatsModalProps {
 
 export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose }) => {
   const { history, getStreakDays, getTotalMinutes } = useSessionStore();
-
-  if (!isOpen) return null;
 
   const streakDays = getStreakDays();
   const totalMinutes = getTotalMinutes();
@@ -41,126 +32,105 @@ export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-studio-darker border border-studio-border rounded-3xl shadow-2xl overflow-hidden my-8">
-        
-        {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-amber-950/40 via-studio-panel to-studio-panel border-b border-studio-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              <Trophy className="w-5 h-5" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      channel="CH-06 · Registro di sala"
+      title="Costanza & Storico Vocale"
+      subtitle="Monitora la continuità del tuo riscaldamento e i turni completati."
+      icon={<Flame className="h-5 w-5 text-cue" />}
+      size="lg"
+      accent="cue"
+    >
+      <div className="space-y-6">
+        {/* Contatori hardware */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="well flex flex-col justify-between p-4">
+            <div className="flex items-center justify-between">
+              <span className="silk">Streak attivo</span>
+              <Flame className="h-4 w-4 text-cue" />
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                Statistiche & Streak Giornaliero
-              </h3>
-              <p className="text-xs text-studio-muted">Traccia la costanza del tuo riscaldamento vocale</p>
+            <div className="mt-3 font-mono text-3xl font-semibold tabular-nums text-cue">
+              {pad2(streakDays)}{' '}
+              <span className="text-xs font-normal text-ink-400">
+                {streakDays === 1 ? 'giorno' : 'giorni'}
+              </span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-studio-muted hover:text-white hover:bg-studio-panel transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="well flex flex-col justify-between p-4">
+            <div className="flex items-center justify-between">
+              <span className="silk">Minuti al leggio</span>
+              <Clock className="h-4 w-4 text-signal" />
+            </div>
+            <div className="mt-3 font-mono text-3xl font-semibold tabular-nums text-signal">
+              {pad2(totalMinutes)}{' '}
+              <span className="text-xs font-normal text-ink-400">min</span>
+            </div>
+          </div>
+
+          <div className="well flex flex-col justify-between p-4">
+            <div className="flex items-center justify-between">
+              <span className="silk">Take completati</span>
+              <CheckCircle2 className="h-4 w-4 text-go" />
+            </div>
+            <div className="mt-3 font-mono text-3xl font-semibold tabular-nums text-go">
+              {pad2(totalExercises)}{' '}
+              <span className="text-xs font-normal text-ink-400">esercizi</span>
+            </div>
+          </div>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          
-          {/* Key Metrics Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            {/* Streak */}
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-amber-500/15 to-studio-panel border border-amber-500/30 flex flex-col items-center justify-center text-center">
-              <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 mb-2 shadow-lg shadow-amber-500/20">
-                <Flame className="w-6 h-6 fill-amber-400" />
-              </div>
-              <span className="text-3xl font-black font-mono text-white">
-                {streakDays} {streakDays === 1 ? 'giorno' : 'giorni'}
-              </span>
-              <span className="text-xs text-amber-300/90 font-medium mt-0.5">
-                Streak Allenamento
-              </span>
-            </div>
+        {/* Nota motivazionale */}
+        <blockquote className="border-l-2 border-cue/70 pl-4 font-display text-base italic text-ink-300">
+          “La voce è muscolo e memoria: dieci minuti di articolazione ogni giorno valgono più di un'ora occasionale prima di entrare in turno.”
+        </blockquote>
 
-            {/* Minuti Totali */}
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-cyan-500/15 to-studio-panel border border-cyan-500/30 flex flex-col items-center justify-center text-center">
-              <div className="p-3 rounded-2xl bg-cyan-neon/20 text-cyan-neon mb-2 shadow-lg shadow-cyan-neon/20">
-                <Clock className="w-6 h-6" />
-              </div>
-              <span className="text-3xl font-black font-mono text-white">
-                {totalMinutes} min
-              </span>
-              <span className="text-xs text-cyan-300/90 font-medium mt-0.5">
-                Tempo Vocale Totale
-              </span>
-            </div>
-
-            {/* Esercizi completati */}
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-violet-500/15 to-studio-panel border border-violet-500/30 flex flex-col items-center justify-center text-center">
-              <div className="p-3 rounded-2xl bg-violet-500/20 text-violet-400 mb-2 shadow-lg shadow-violet-500/20">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <span className="text-3xl font-black font-mono text-white">
-                {totalExercises}
-              </span>
-              <span className="text-xs text-violet-300/90 font-medium mt-0.5">
-                Esercizi Eseguiti
-              </span>
-            </div>
+        {/* Registro sessioni */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <History className="h-3.5 w-3.5 text-ink-400" />
+            <span className="silk text-ink-300">Ultime sessioni registrate</span>
           </div>
 
-          {/* Motivation Quote */}
-          <div className="p-4 rounded-2xl bg-studio-panel/50 border border-studio-border flex items-center gap-3 text-xs sm:text-sm text-slate-300">
-            <Sparkles className="w-5 h-5 text-cyan-neon shrink-0" />
-            <p>
-              "La voce è un muscolo e una memoria: 10 minuti di articolazione quotidiana valgono più di un'ora sporadica prima del microfono."
-            </p>
-          </div>
-
-          {/* History Log */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-studio-muted mb-3 flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5 text-cyan-neon" />
-              Cronologia Sessioni Completate
-            </h4>
-
-            {history.length === 0 ? (
-              <div className="p-6 text-center rounded-2xl bg-studio-panel/30 border border-studio-border text-studio-muted text-xs">
-                Nessuna sessione completata registrata finora. Completa la tua prima sessione nel timer per iniziare a tracciare lo storico!
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {history.slice(0, 10).map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-studio-panel border border-studio-border"
-                  >
+          {history.length === 0 ? (
+            <div className="well p-8 text-center">
+              <span className="silk">Registro vuoto</span>
+              <p className="mt-1.5 text-xs text-ink-400">
+                Completa una scaletta nello Studio per registrare il tuo primo turno vocale.
+              </p>
+            </div>
+          ) : (
+            <div className="well divide-y divide-ink-800">
+              {history.slice(0, 10).map((item, idx) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-ink-500">{pad2(idx + 1)}</span>
                     <div>
-                      <h5 className="text-xs sm:text-sm font-bold text-white">
+                      <h5 className="font-display text-sm font-medium text-ink-100">
                         {item.sessionName}
                       </h5>
-                      <span className="text-[11px] text-studio-muted flex items-center gap-1 mt-0.5">
-                        <Calendar className="w-3 h-3" />
+                      <span className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-ink-500">
+                        <Calendar className="h-3 w-3" />
                         {formatDate(item.date)}
                       </span>
                     </div>
-
-                    <div className="text-right">
-                      <span className="text-xs font-mono font-bold text-cyan-neon block">
-                        {Math.round(item.durationSeconds / 60)} min
-                      </span>
-                      <span className="text-[10px] text-studio-muted">
-                        {item.exercisesCompleted} esercizi
-                      </span>
-                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
 
+                  <div className="text-right font-mono">
+                    <span className="block text-xs font-semibold text-signal">
+                      {Math.max(1, Math.round(item.durationSeconds / 60))} min
+                    </span>
+                    <span className="text-[10px] text-ink-500">
+                      {item.exercisesCompleted} take
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

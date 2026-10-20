@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Sparkles, 
-  Play, 
-  Plus, 
-  Check, 
-  AlertCircle, 
-  Flame, 
-  Wand2, 
+import {
+  AlertTriangle,
+  Check,
+  Play,
+  Plus,
+  RefreshCw,
   Settings as SettingsIcon,
-  RefreshCw
+  Sparkles,
+  Wand2,
 } from 'lucide-react';
-import { Exercise, DifficultyLevel, ExerciseCategory } from '../../types';
+import { DifficultyLevel, Exercise, ExerciseCategory } from '../../types';
 import { generateExerciseWithAI, getOfflineFallbackExercise } from '../../services/aiService';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useExerciseStore } from '../../store/useExerciseStore';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useTimerStore } from '../../store/useTimerStore';
+import { cn, DIFFICULTY_LABELS } from '../../lib/ui';
+import { DifficultyMeter, ScriptText } from '../ui/primitives';
+import { Modal } from '../ui/Modal';
 
 interface AIGeneratorModalProps {
   isOpen: boolean;
@@ -25,13 +26,13 @@ interface AIGeneratorModalProps {
 }
 
 const PHONEME_PRESETS = [
-  { label: 'R vibrante alveolare (R moscia)', value: 'R vibrante alveolare' },
-  { label: 'Sibilanti: S sorda vs S sonora', value: 'S sorda e S sonora' },
-  { label: 'Affricate: Z sorda vs Z sonora', value: 'Z sorda [ts] e Z sonora [dz]' },
-  { label: 'Consonanti doppie e occlusive (P, T, C)', value: 'Consonanti doppie occlusive' },
-  { label: 'Vocali aperte e chiuse (È/É e Ò/Ó)', value: 'Distinzione timbrica vocali È/É e Ò/Ó' },
-  { label: 'Gruppi palatali GLI e GNE', value: 'Palatali [ʎ] GLI e [ɲ] GNE' },
-  { label: 'Scioglilingua di agilità e velocità estrema', value: 'Agilità labiale e velocità' },
+  { code: 'R', label: 'R vibrante alveolare (R moscia)', value: 'R vibrante alveolare' },
+  { code: 'S', label: 'Sibilanti: S sorda vs S sonora', value: 'S sorda e S sonora' },
+  { code: 'Z', label: 'Affricate: Z sorda vs Z sonora', value: 'Z sorda [ts] e Z sonora [dz]' },
+  { code: 'PP', label: 'Consonanti doppie e occlusive', value: 'Consonanti doppie occlusive' },
+  { code: 'È/É', label: 'Vocali aperte e chiuse (È/É · Ò/Ó)', value: 'Distinzione timbrica vocali È/É e Ò/Ó' },
+  { code: 'GLI', label: 'Gruppi palatali GLI e GNE', value: 'Palatali [ʎ] GLI e [ɲ] GNE' },
+  { code: 'VEL', label: 'Agilità labiale e velocità estrema', value: 'Agilità labiale e velocità' },
 ];
 
 export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
@@ -50,13 +51,11 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
   const [generatedExercise, setGeneratedExercise] = useState<Exercise | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const groqApiKey = useSettingsStore((state) => state.groqApiKey);
-  const hasGroq = useSettingsStore((state) => state.hasGroqKey());
-  const addExercise = useExerciseStore((state) => state.addExercise);
-  const addToActiveQueue = useSessionStore((state) => state.addToActiveQueue);
+  const groqApiKey = useSettingsStore((s) => s.groqApiKey);
+  const hasGroq = useSettingsStore((s) => s.hasGroqKey());
+  const addExercise = useExerciseStore((s) => s.addExercise);
+  const addToActiveQueue = useSessionStore((s) => s.addToActiveQueue);
   const { initExercise, start } = useTimerStore();
-
-  if (!isOpen) return null;
 
   const targetPhoneme = customPhoneme.trim() || selectedPreset;
 
@@ -67,8 +66,7 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
 
     try {
       if (useFallback || !hasGroq) {
-        // Simulazione caricamento leggero per feedback utente
-        await new Promise((res) => setTimeout(res, 600));
+        await new Promise((res) => setTimeout(res, 500));
         const fallback = getOfflineFallbackExercise({
           targetPhoneme,
           difficulty,
@@ -89,11 +87,7 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
         setGeneratedExercise(result);
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Errore nella generazione dell\'esercizio con AI.');
-      }
+      setError(err instanceof Error ? err.message : 'Errore nella generazione AI.');
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +97,7 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
     if (!generatedExercise) return;
     addExercise(generatedExercise);
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setTimeout(() => setSavedSuccess(false), 2500);
   };
 
   const handleAddToSession = () => {
@@ -111,9 +105,7 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
     addToActiveQueue(generatedExercise);
     addExercise(generatedExercise);
     setSavedSuccess(true);
-    setTimeout(() => {
-      onClose();
-    }, 1000);
+    setTimeout(() => onClose(), 700);
   };
 
   const handlePlayNow = () => {
@@ -126,254 +118,219 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-studio-darker border border-studio-border rounded-3xl shadow-2xl overflow-hidden my-8">
-        
-        {/* Header con gradiente */}
-        <div className="relative p-6 bg-gradient-to-r from-violet-950/60 via-studio-panel to-studio-panel border-b border-studio-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-violet-500/20 text-violet-400 border border-violet-500/30">
-              <Sparkles className="w-5 h-5" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      channel="CH-05 · Sintetizzatore dizione · Groq Llama 3"
+      title="Generatore Copioni AI"
+      subtitle="Componi uno scioglilingua o un esercizio calibrato sul fonema che vuoi allenare."
+      icon={<Sparkles className="h-5 w-5 text-signal" />}
+      size="lg"
+      accent="signal"
+    >
+      <div className="space-y-6">
+        {/* Avviso se manca la chiave Groq */}
+        {!hasGroq && (
+          <div className="well flex flex-col justify-between gap-3 border-cue/30 bg-cue/[0.05] p-4 sm:flex-row sm:items-center">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cue" />
+              <div className="text-xs leading-relaxed text-ink-200">
+                <strong className="text-cue">Chiave Groq non configurata.</strong> Puoi testare subito il generatore usando il motore offline integrato, oppure inserire la chiave Groq gratuita per testi inediti illimitati.
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                Generatore Esercizi & Scioglilingua AI
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40">
-                  Groq Llama 3
-                </span>
-              </h3>
-              <p className="text-xs text-studio-muted">Crea esercizi calibrati su misura per la tua voce e dizione</p>
-            </div>
+            <button onClick={onOpenSettings} className="btn btn-ghost shrink-0 text-xs">
+              <SettingsIcon className="h-3.5 w-3.5 text-cue" />
+              Imposta chiave
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-studio-muted hover:text-white hover:bg-studio-panel transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        )}
+
+        {/* 1. Fonema Target */}
+        <div>
+          <label className="silk mb-2 block">01 · Seleziona fonema o articolazione target</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {PHONEME_PRESETS.map((preset) => {
+              const active = selectedPreset === preset.value && !customPhoneme;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPreset(preset.value);
+                    setCustomPhoneme('');
+                  }}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-xs transition',
+                    active
+                      ? 'border-signal/60 bg-signal/[0.08] text-ink-100'
+                      : 'border-ink-800 bg-ink-950 text-ink-300 hover:border-ink-700 hover:text-ink-100'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-flex h-6 min-w-[34px] items-center justify-center rounded border px-1.5 font-mono text-[10px]',
+                      active
+                        ? 'border-signal/50 bg-signal/15 text-signal'
+                        : 'border-ink-700 bg-ink-900 text-ink-400'
+                    )}
+                  >
+                    {preset.code}
+                  </span>
+                  <span className="truncate font-medium">{preset.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <input
+            type="text"
+            value={customPhoneme}
+            onChange={(e) => setCustomPhoneme(e.target.value)}
+            placeholder="Oppure specifica un fonema personalizzato (es. Dentali T/D, nessi STR/SPR)…"
+            className="input mt-2.5 text-xs"
+          />
         </div>
 
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          
-          {/* Warning se manca la chiave Groq */}
-          {!hasGroq && (
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3 text-xs sm:text-sm text-amber-200">
-              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <span className="font-semibold text-amber-300 block mb-1">
-                  Chiave Groq API non rilevata
-                </span>
-                <p className="text-amber-200/90 mb-2">
-                  Puoi provare la generazione tramite il <strong>motore offline di riserva</strong>, oppure inserire la tua chiave Groq gratuita per generare scioglilingua inediti con Llama 3.
-                </p>
+        {/* 2. Difficoltà e Tipologia */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="silk mb-2 block">02 · Livello di difficoltà</label>
+            <div className="seg w-full">
+              {(['principiante', 'intermedio', 'estremo'] as DifficultyLevel[]).map((lvl) => (
                 <button
-                  onClick={onOpenSettings}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-medium text-xs border border-amber-500/40 transition-all"
+                  key={lvl}
+                  type="button"
+                  data-active={difficulty === lvl}
+                  onClick={() => setDifficulty(lvl)}
+                  className="seg-item flex-1 justify-center text-xs"
                 >
-                  <SettingsIcon className="w-3.5 h-3.5" />
-                  Configura Groq API Key
+                  {DIFFICULTY_LABELS[lvl]}
                 </button>
-              </div>
+              ))}
             </div>
+          </div>
+
+          <div>
+            <label className="silk mb-2 block">03 · Categoria</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as ExerciseCategory)}
+              className="input text-xs"
+            >
+              <option value="scioglilingua">Scioglilingua fonetico</option>
+              <option value="articolazione">Articolazione muscolare</option>
+              <option value="dizione-vocali">Timbro vocali È/É e Ò/Ó</option>
+              <option value="velocita">Velocità e fiato unico</option>
+              <option value="respirazione">Controllo diaframmatico</option>
+            </select>
+          </div>
+        </div>
+
+        {/* 3. Contesto opzionale */}
+        <div>
+          <label className="silk mb-1.5 block">04 · Contesto o registro attoriale (opzionale)</label>
+          <input
+            type="text"
+            value={customContext}
+            onChange={(e) => setCustomContext(e.target.value)}
+            placeholder="Es. 'monologo noir drammatico', 'spot pubblicitario brillante', 'narrazione fiaba'…"
+            className="input text-xs"
+          />
+        </div>
+
+        {/* Eventuale errore */}
+        {error && (
+          <div className="well flex items-center justify-between gap-3 border-tally/40 bg-tally/10 p-3.5 text-xs text-ink-100">
+            <span>{error}</span>
+            <button onClick={() => handleGenerate(true)} className="btn btn-ghost shrink-0 py-1 text-xs">
+              Usa preset locale
+            </button>
+          </div>
+        )}
+
+        {/* Pulsante genera */}
+        <button
+          onClick={() => handleGenerate(false)}
+          disabled={isLoading}
+          className="btn btn-primary w-full py-3 text-sm font-semibold"
+        >
+          {isLoading ? (
+            <>
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Composizione copione in corso…
+            </>
+          ) : (
+            <>
+              <Wand2 className="h-4 w-4" />
+              {hasGroq ? 'Componi nuovo copione con AI' : 'Genera copione di prova (Offline)'}
+            </>
           )}
+        </button>
 
-          {/* Form di Configurazione */}
-          <div className="space-y-4">
-            
-            {/* Target Fonetico Preset */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2">
-                1. Seleziona il Fonema o la Lettera Target
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {PHONEME_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPreset(preset.value);
-                      setCustomPhoneme('');
-                    }}
-                    className={`text-left px-3.5 py-2.5 rounded-xl text-xs font-medium border transition-all ${
-                      selectedPreset === preset.value && !customPhoneme
-                        ? 'bg-violet-600/20 border-violet-500 text-violet-200 shadow-sm'
-                        : 'bg-studio-panel/70 border-studio-border text-studio-muted hover:text-white hover:bg-studio-panel'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+        {/* Skeleton durante l'attesa */}
+        {isLoading && (
+          <div className="well space-y-3 p-5">
+            <div className="skeleton h-4 w-1/3" />
+            <div className="skeleton h-16 w-full" />
+            <div className="skeleton h-3 w-2/3" />
+          </div>
+        )}
+
+        {/* Anteprima copione generato */}
+        {generatedExercise && !isLoading && (
+          <div className="well space-y-4 border-signal/35 p-5 animate-rise">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="silk text-signal">Copione generato</span>
+                <span className="h-3 w-px bg-ink-800" />
+                <span className="font-mono text-xs text-ink-300">{generatedExercise.targetPhoneme}</span>
               </div>
-
-              {/* Input personalizzato */}
-              <div className="mt-2.5">
-                <input
-                  type="text"
-                  value={customPhoneme}
-                  onChange={(e) => setCustomPhoneme(e.target.value)}
-                  placeholder="Oppure scrivi un fonema o combinazione specifica (es. GLI + GN, Dente-labiale F/V)..."
-                  className="w-full px-3.5 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white placeholder-studio-muted focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
-                />
+              <div className="flex items-center gap-3">
+                <DifficultyMeter level={generatedExercise.difficulty} />
+                <span className="silk text-ink-400">{generatedExercise.durationSeconds}s</span>
               </div>
             </div>
 
-            {/* Livello di Difficoltà */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2">
-                2. Livello di Difficoltà
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {(['principiante', 'intermedio', 'estremo'] as DifficultyLevel[]).map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => setDifficulty(lvl)}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-semibold capitalize border transition-all flex items-center justify-center gap-1.5 ${
-                      difficulty === lvl
-                        ? lvl === 'estremo'
-                          ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                          : 'bg-violet-600/20 border-violet-500 text-violet-200'
-                        : 'bg-studio-panel/70 border-studio-border text-studio-muted hover:text-white'
-                    }`}
-                  >
-                    {lvl === 'estremo' && <Flame className="w-3.5 h-3.5 text-rose-400" />}
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <h4 className="font-display text-2xl font-medium text-ink-100">
+              {generatedExercise.title}
+            </h4>
 
-            {/* Categoria */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2">
-                3. Tipologia Esercizio
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as ExerciseCategory)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-violet-500"
-              >
-                <option value="scioglilingua">Scioglilingua Fonetico Tradizionale / Creativo</option>
-                <option value="articolazione">Esercizio di Articolazione e Muscoli Facciali</option>
-                <option value="dizione-vocali">Dizione Vocali Aperte e Chiuse (È/É e Ò/Ó)</option>
-                <option value="velocita">Velocità e Tenuta d'Aria (Doppiaggio rapido)</option>
-                <option value="respirazione">Respirazione & Appoggio Diaframmatico</option>
-              </select>
-            </div>
-
-            {/* Contesto addizionale opzionale */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2">
-                4. Contesto o Tema Specifico (Opzionale)
-              </label>
-              <input
-                type="text"
-                value={customContext}
-                onChange={(e) => setCustomContext(e.target.value)}
-                placeholder="Es. 'tono drammatico teatrale', 'ritmo comico sincrono per cartoni animati'..."
-                className="w-full px-3.5 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white placeholder-studio-muted focus:outline-none focus:border-violet-500"
+            <div className="rounded-xl border border-ink-700/80 bg-ink-950/75 p-4">
+              <ScriptText
+                text={`“${generatedExercise.text}”`}
+                targetPhoneme={generatedExercise.targetPhoneme}
+                highlight={true}
+                className="font-display text-lg font-light leading-relaxed text-ink-100"
               />
             </div>
-          </div>
 
-          {/* Errore */}
-          {error && (
-            <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
-              <span>{error}</span>
-              <button
-                onClick={() => handleGenerate(true)}
-                className="underline hover:text-white shrink-0 ml-2"
-              >
-                Usa fallback offline
+            <p className="border-l-2 border-cue/70 pl-3 font-display text-xs italic text-ink-300">
+              {generatedExercise.tips}
+            </p>
+
+            <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-3">
+              <button onClick={handlePlayNow} className="btn btn-primary text-xs">
+                <Play className="h-3.5 w-3.5 fill-current" />
+                Subito sul leggio
+              </button>
+              <button onClick={handleAddToSession} className="btn btn-signal text-xs">
+                <Plus className="h-3.5 w-3.5" />
+                Aggiungi in scaletta
+              </button>
+              <button onClick={handleSaveToLibrary} disabled={savedSuccess} className="btn btn-ghost text-xs">
+                {savedSuccess ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-go" />
+                    Salvato in archivio
+                  </>
+                ) : (
+                  'Salva in libreria'
+                )}
               </button>
             </div>
-          )}
-
-          {/* Bottone Genera */}
-          <button
-            onClick={() => handleGenerate(false)}
-            disabled={isLoading}
-            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-violet-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-violet-200" />
-                <span>Generazione con Groq Llama 3 in corso...</span>
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-4 h-4 text-violet-200" />
-                <span>Genera Nuovo Esercizio con AI</span>
-              </>
-            )}
-          </button>
-
-          {/* Risultato Generato */}
-          {generatedExercise && (
-            <div className="mt-6 p-5 rounded-2xl bg-studio-darkest border border-violet-500/30 space-y-4 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
-                  Esercizio Generato:
-                </span>
-                <span className="text-xs font-mono text-studio-muted">
-                  {generatedExercise.durationSeconds}s
-                </span>
-              </div>
-
-              <h4 className="text-lg font-bold text-white">
-                {generatedExercise.title}
-              </h4>
-
-              <div className="p-4 rounded-xl bg-studio-panel border border-studio-border">
-                <p className="text-sm sm:text-base text-slate-100 font-medium leading-relaxed">
-                  "{generatedExercise.text}"
-                </p>
-              </div>
-
-              <div className="text-xs text-amber-300 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-                <strong>Consiglio Vocale:</strong> {generatedExercise.tips}
-              </div>
-
-              {/* Azioni sull'esercizio generato */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
-                <button
-                  onClick={handlePlayNow}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-cyan-neon text-black font-semibold text-xs hover:bg-cyan-400 transition-all shadow-md shadow-cyan-neon/20"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Avvia nel Timer</span>
-                </button>
-
-                <button
-                  onClick={handleAddToSession}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-all shadow-md shadow-violet-600/20"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Aggiungi alla Scaletta</span>
-                </button>
-
-                <button
-                  onClick={handleSaveToLibrary}
-                  disabled={savedSuccess}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-studio-panel hover:bg-studio-border text-studio-text font-semibold text-xs border border-studio-border transition-all"
-                >
-                  {savedSuccess ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-400">Salvato!</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Salva in Libreria</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };

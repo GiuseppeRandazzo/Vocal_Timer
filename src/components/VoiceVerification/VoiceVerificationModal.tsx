@@ -1,19 +1,21 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  X, 
-  Mic, 
-  Square, 
-  RotateCcw, 
-  AlertTriangle, 
-  Volume2, 
-  Loader2, 
-  Award
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Award,
+  Loader2,
+  Mic,
+  RotateCcw,
+  Square,
+  Volume2,
 } from 'lucide-react';
-import { Exercise, ComparisonResult } from '../../types';
-import { VoiceRecorderService, LiveAudioData } from '../../services/mediaRecorderService';
+import { ComparisonResult, Exercise } from '../../types';
+import { LiveAudioData, VoiceRecorderService } from '../../services/mediaRecorderService';
 import { transcribeAudioWithHF, transcribeWithBrowserSpeech } from '../../services/sttService';
 import { compareSpeechToOriginal } from '../../services/comparisonService';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { cn, formatTime } from '../../lib/ui';
+import { ScriptText, TallyLight } from '../ui/primitives';
+import { Modal } from '../ui/Modal';
 
 interface VoiceVerificationModalProps {
   isOpen: boolean;
@@ -21,6 +23,8 @@ interface VoiceVerificationModalProps {
   exercise: Exercise | null;
   onOpenSettings: () => void;
 }
+
+const BAR_COUNT = 24;
 
 export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
   isOpen,
@@ -35,18 +39,17 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
-  const [frequencyBars, setFrequencyBars] = useState<number[]>(new Array(16).fill(0));
+  const [frequencyBars, setFrequencyBars] = useState<number[]>(new Array(BAR_COUNT).fill(0));
 
   const recorderServiceRef = useRef<VoiceRecorderService | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  const hfApiKey = useSettingsStore((state) => state.hfApiKey);
-  const hasHf = useSettingsStore((state) => state.hasHfKey());
+  const hfApiKey = useSettingsStore((s) => s.hfApiKey);
+  const hasHf = useSettingsStore((s) => s.hasHfKey());
 
   useEffect(() => {
     return () => {
-      // Cleanup su unmount
       if (recorderServiceRef.current) {
         recorderServiceRef.current.cancelRecording();
       }
@@ -59,7 +62,7 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
     };
   }, [audioUrl]);
 
-  if (!isOpen || !exercise) return null;
+  if (!exercise) return null;
 
   const handleStartRecording = async () => {
     setErrorMessage(null);
@@ -73,10 +76,9 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
     try {
       recorderServiceRef.current = new VoiceRecorderService();
       await recorderServiceRef.current.startRecording((data: LiveAudioData) => {
-        // Campiona 16 barre per il VU meter
-        const step = Math.floor(data.frequencyData.length / 16);
+        const step = Math.max(1, Math.floor(data.frequencyData.length / BAR_COUNT));
         const bars: number[] = [];
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < BAR_COUNT; i++) {
           bars.push(data.frequencyData[i * step] || 0);
         }
         setFrequencyBars(bars);
@@ -87,11 +89,7 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
         setRecordDuration((prev) => prev + 1);
       }, 1000);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage('Impossibile avviare il microfono.');
-      }
+      setErrorMessage(err instanceof Error ? err.message : 'Impossibile accedere al microfono.');
     }
   };
 
@@ -106,19 +104,14 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
     try {
       const blob = await recorderServiceRef.current.stopRecording();
       setIsRecording(false);
-      setFrequencyBars(new Array(16).fill(0));
+      setFrequencyBars(new Array(BAR_COUNT).fill(0));
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
 
-      // Procedi all'analisi automatica
       await processAudioAnalysis(blob);
     } catch (err: unknown) {
       setIsRecording(false);
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage('Errore nel salvataggio dell\'audio registrato.');
-      }
+      setErrorMessage(err instanceof Error ? err.message : 'Errore nel salvataggio del take audio.');
     }
   };
 
@@ -128,25 +121,20 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
 
     try {
       let transcribedText = '';
-
       if (hasHf) {
-        setStatusMessage('Trascrizione in corso con Hugging Face Whisper Large-v3...');
+        setStatusMessage('Trascrizione in corso con Hugging Face Whisper Large-v3…');
         transcribedText = await transcribeAudioWithHF(blob, hfApiKey);
       } else {
-        setStatusMessage('Chiave Hugging Face non inserita: trascrizione locale con Web Speech API...');
+        setStatusMessage('Token HF non presente: ascolto tramite Web Speech API del browser…');
         transcribedText = await transcribeWithBrowserSpeech();
       }
 
-      setStatusMessage('Analisi comparativa della dizione fonetica...');
+      setStatusMessage('Allineamento fonetico e verifica del copione…');
       const comparison = compareSpeechToOriginal(exercise.text, transcribedText);
       setComparisonResult(comparison);
       setStatusMessage('');
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage('Errore durante l\'analisi vocale.');
-      }
+      setErrorMessage(err instanceof Error ? err.message : 'Errore durante la trascrizione vocale.');
     } finally {
       setIsTranscribing(false);
     }
@@ -155,7 +143,7 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
   const handleFallbackLocalSTT = async () => {
     setIsTranscribing(true);
     setErrorMessage(null);
-    setStatusMessage('Avvio riconoscimento vocale Web Speech...');
+    setStatusMessage('Ascolto attivo tramite riconoscimento vocale del browser: leggi ora il testo…');
 
     try {
       const transcript = await transcribeWithBrowserSpeech();
@@ -163,284 +151,250 @@ export const VoiceVerificationModal: React.FC<VoiceVerificationModalProps> = ({
       setComparisonResult(comparison);
       setStatusMessage('');
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage('Errore nel riconoscimento vocale locale.');
-      }
+      setErrorMessage(err instanceof Error ? err.message : 'Errore nel riconoscimento vocale locale.');
     } finally {
       setIsTranscribing(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-studio-darker border border-studio-border rounded-3xl shadow-2xl overflow-hidden my-8">
-        
-        {/* Header Modale */}
-        <div className="p-6 bg-gradient-to-r from-cyan-950/40 via-studio-panel to-studio-panel border-b border-studio-border flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-cyan-neon/15 text-cyan-neon border border-cyan-neon/30">
-              <Mic className="w-5 h-5" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      channel="CH-04 · Cabina di registrazione · Whisper STT"
+      title="Verifica Dizione & Articolazione"
+      subtitle="Incidi il take al microfono: l'AI confronterà ogni parola con il copione originale."
+      icon={<Mic className="h-5 w-5 text-tally" />}
+      size="xl"
+      accent="tally"
+    >
+      <div className="space-y-6">
+        {/* Copione da incidere */}
+        <div className="well p-5 sm:p-6">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-ink-700/70 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="silk">Copione da incidere</span>
+              <span className="h-3 w-px bg-ink-700" />
+              <span className="font-mono text-xs text-signal">{exercise.targetPhoneme}</span>
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                Verifica Dizione & Articolazione Vocale
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-neon/15 text-cyan-neon border border-cyan-neon/30">
-                  AI Speech-to-Text
-                </span>
-              </h3>
-              <p className="text-xs text-studio-muted">Registra il tuo take al microfono per misurare accuratezza e fonemi</p>
-            </div>
+            <TallyLight live={isRecording} label={isRecording ? 'REC' : 'READY'} />
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-studio-muted hover:text-white hover:bg-studio-panel transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <ScriptText
+            text={`“${exercise.text}”`}
+            targetPhoneme={exercise.targetPhoneme}
+            highlight={true}
+            className="font-display text-xl font-light leading-relaxed text-ink-100 sm:text-2xl"
+          />
         </div>
 
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          
-          {/* Box Testo Scioglilingua da pronunciare */}
-          <div className="bg-studio-darkest p-5 rounded-2xl border border-studio-border">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono font-semibold text-cyan-neon uppercase tracking-wider">
-                Testo da Recitare ({exercise.title}):
-              </span>
-              <span className="text-xs text-studio-muted font-mono">
-                Target: {exercise.targetPhoneme}
-              </span>
-            </div>
-            <p className="text-base sm:text-lg text-white font-medium leading-relaxed">
-              "{exercise.text}"
-            </p>
+        {/* Banco di registrazione + VU Meter */}
+        <div className="well flex flex-col items-center p-6 text-center">
+          {/* Scala dB */}
+          <div className="mb-2 flex w-full max-w-md justify-between font-mono text-[9px] text-ink-500">
+            <span>-36 dB</span>
+            <span>-24</span>
+            <span>-12</span>
+            <span className="text-cue">-6</span>
+            <span className="text-tally">0 PEAK</span>
           </div>
 
-          {/* Area Registratore & VU-Meter Live */}
-          <div className="p-6 rounded-2xl bg-studio-panel/70 border border-studio-border flex flex-col items-center justify-center text-center">
-            
-            {/* Live VU Meter LED Bars */}
-            <div className="h-16 flex items-end justify-center gap-1.5 w-full max-w-xs mb-4">
-              {frequencyBars.map((val, idx) => {
-                const heightPercent = isRecording ? Math.max(8, Math.min(100, (val / 255) * 100)) : 8;
-                const isHigh = heightPercent > 75;
-                const isMid = heightPercent > 40;
+          {/* Barre spettrali LED */}
+          <div className="flex h-16 w-full max-w-md items-end justify-between gap-1 rounded-md border border-ink-800 bg-ink-900 px-3 py-2">
+            {frequencyBars.map((val, idx) => {
+              const pct = isRecording ? Math.max(10, Math.min(100, (val / 255) * 100)) : 10;
+              const isPeak = pct > 78;
+              const isWarm = pct > 45;
+              return (
+                <div
+                  key={idx}
+                  style={{ height: `${pct}%` }}
+                  className={cn(
+                    'flex-1 rounded-[1px] transition-all duration-75',
+                    isRecording
+                      ? isPeak
+                        ? 'bg-tally shadow-[0_0_8px_rgba(255,69,58,0.8)]'
+                        : isWarm
+                          ? 'bg-cue'
+                          : 'bg-go shadow-[0_0_6px_rgba(82,227,160,0.5)]'
+                      : 'bg-ink-700'
+                  )}
+                />
+              );
+            })}
+          </div>
 
-                return (
-                  <div
-                    key={idx}
-                    style={{ height: `${heightPercent}%` }}
-                    className={`w-2.5 rounded-t-sm transition-all duration-75 ${
-                      isRecording
-                        ? isHigh
-                          ? 'bg-rose-500 shadow-rose-500/50 shadow-sm'
-                          : isMid
-                            ? 'bg-amber-400'
-                            : 'bg-cyan-neon shadow-cyan-neon/30 shadow-sm'
-                        : 'bg-studio-border'
-                    }`}
-                  />
-                );
-              })}
-            </div>
+          {/* Timecode registrazione */}
+          <div className="mt-4 flex items-center gap-2 font-mono text-3xl font-medium tabular-nums">
+            <span className={cn('h-2 w-2 rounded-full', isRecording ? 'animate-ping bg-tally' : 'bg-ink-600')} />
+            <span className={isRecording ? 'text-tally' : 'text-ink-300'}>
+              {formatTime(recordDuration)}
+            </span>
+          </div>
 
-            {/* Timer Durata Registrazione */}
-            <div className="font-mono text-2xl font-bold mb-4 flex items-center gap-2">
-              {isRecording && (
-                <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping inline-block" />
-              )}
-              <span className={isRecording ? 'text-rose-400' : 'text-studio-muted'}>
-                00:{recordDuration.toString().padStart(2, '0')}
-              </span>
-            </div>
-
-            {/* Pulsante Principale Microfono */}
+          {/* Pulsante REC / STOP */}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             {!isRecording ? (
               <button
                 onClick={handleStartRecording}
                 disabled={isTranscribing}
-                className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-tr from-cyan-neon to-cyan-500 text-black font-bold text-sm shadow-xl shadow-cyan-neon/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                className="btn btn-rec px-6 py-3 text-sm font-semibold"
               >
-                <Mic className="w-5 h-5" />
-                <span>Inizia a Registrare</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-tally shadow-[0_0_10px_rgba(255,69,58,0.9)]" />
+                Inizia registrazione take
               </button>
             ) : (
               <button
                 onClick={handleStopRecording}
-                className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm shadow-xl shadow-rose-500/40 animate-pulse transition-all"
+                className="btn border border-tally bg-tally px-6 py-3 text-sm font-semibold text-ink-950 shadow-[0_10px_30px_-8px_rgba(255,69,58,0.85)]"
               >
-                <Square className="w-5 h-5 fill-current" />
-                <span>Ferma e Analizza Dizione</span>
+                <Square className="h-4 w-4 fill-current" />
+                Ferma e analizza dizione
               </button>
-            )}
-
-            {/* Player Riascolto Take */}
-            {audioUrl && !isRecording && (
-              <div className="mt-4 w-full max-w-sm flex items-center gap-3 p-2.5 rounded-xl bg-studio-darkest border border-studio-border">
-                <Volume2 className="w-4 h-4 text-cyan-neon shrink-0 ml-1" />
-                <audio
-                  ref={audioPlayerRef}
-                  src={audioUrl}
-                  controls
-                  className="w-full h-8 rounded-lg outline-none"
-                />
-              </div>
             )}
           </div>
 
-          {/* Stato di Trascrizione / Loading */}
-          {isTranscribing && (
-            <div className="p-4 rounded-2xl bg-studio-panel border border-cyan-neon/30 flex items-center justify-center gap-3 text-cyan-300">
-              <Loader2 className="w-5 h-5 animate-spin text-cyan-neon" />
-              <span className="text-sm font-medium">{statusMessage}</span>
+          {/* Player riascolto */}
+          {audioUrl && !isRecording && (
+            <div className="mt-5 flex w-full max-w-md items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2">
+              <Volume2 className="h-4 w-4 shrink-0 text-signal" />
+              <audio ref={audioPlayerRef} src={audioUrl} controls className="h-8 w-full" />
             </div>
           )}
+        </div>
 
-          {/* Errore con supporto e fallback */}
-          {errorMessage && (
-            <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs sm:text-sm space-y-2">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
-                <span>{errorMessage}</span>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  onClick={handleFallbackLocalSTT}
-                  className="px-3 py-1.5 rounded-lg bg-studio-darker border border-studio-border hover:border-cyan-neon text-cyan-neon text-xs font-medium transition-all"
-                >
-                  Riprova con Riconoscimento Vocale Browser Nativo
-                </button>
-                <button
-                  onClick={onOpenSettings}
-                  className="px-3 py-1.5 rounded-lg bg-studio-darker border border-studio-border hover:border-white text-studio-text text-xs font-medium transition-all"
-                >
-                  Verifica Chiave Hugging Face
-                </button>
-              </div>
+        {/* Stato di elaborazione */}
+        {isTranscribing && (
+          <div className="well flex items-center justify-center gap-3 border-signal/30 p-4 text-xs text-signal">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>{statusMessage}</span>
+          </div>
+        )}
+
+        {/* Errore con opzioni di recupero */}
+        {errorMessage && (
+          <div className="well space-y-3 border-tally/40 bg-tally/[0.06] p-4">
+            <div className="flex items-start gap-2.5 text-xs text-ink-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-tally" />
+              <span>{errorMessage}</span>
             </div>
-          )}
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handleFallbackLocalSTT} className="btn btn-signal py-1.5 text-xs">
+                Usa riconoscimento vocale del browser
+              </button>
+              <button onClick={onOpenSettings} className="btn btn-ghost py-1.5 text-xs">
+                Configura token Hugging Face
+              </button>
+            </div>
+          </div>
+        )}
 
-          {/* Risultato Analisi Comparativa Fonetica */}
-          {comparisonResult && !isTranscribing && (
-            <div className="p-6 rounded-2xl bg-studio-darkest border border-studio-border space-y-5 animate-in fade-in duration-300">
-              
-              {/* Header Punteggio */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-studio-panel/70 border border-studio-border">
-                <div className="flex items-center gap-4">
-                  <div className={`relative w-20 h-20 rounded-2xl flex flex-col items-center justify-center border shadow-lg ${
+        {/* Risultato analisi comparativa */}
+        {comparisonResult && !isTranscribing && (
+          <div className="well space-y-5 p-5 animate-rise">
+            {/* Punteggio e giudizio */}
+            <div className="flex flex-col justify-between gap-4 border-b border-ink-800 pb-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-4">
+                <div
+                  className={cn(
+                    'flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-xl border font-mono',
                     comparisonResult.accuracyScore >= 85
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                      ? 'border-go/40 bg-go/10 text-go'
                       : comparisonResult.accuracyScore >= 70
-                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
-                        : 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                  }`}>
-                    <span className="text-2xl font-mono font-black">
-                      {comparisonResult.accuracyScore}%
-                    </span>
-                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-80">
-                      Accuratezza
-                    </span>
-                  </div>
-
-                  <div>
-                    <h4 className="text-base font-bold text-white flex items-center gap-1.5">
-                      <Award className="w-4 h-4 text-amber-400" />
-                      Valutazione Articolatoria
-                    </h4>
-                    <p className="text-xs text-studio-muted mt-0.5">
-                      {comparisonResult.feedbackNote}
-                    </p>
-                  </div>
+                        ? 'border-cue/40 bg-cue/10 text-cue'
+                        : 'border-tally/40 bg-tally/10 text-tally'
+                  )}
+                >
+                  <span className="text-2xl font-bold tabular-nums">
+                    {comparisonResult.accuracyScore}%
+                  </span>
+                  <span className="text-[9px] uppercase tracking-widest opacity-80">Dizione</span>
                 </div>
 
-                {/* Badge Statistiche */}
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    ✓ {comparisonResult.stats.correctWords} Corrette
-                  </span>
-                  <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    ~ {comparisonResult.stats.wrongWords} Storpiate
-                  </span>
-                  <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                    ✗ {comparisonResult.stats.omittedWords} Omesse
-                  </span>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Award className="h-4 w-4 text-cue" />
+                    <span className="silk text-ink-300">Esito fonetico</span>
+                  </div>
+                  <p className="mt-1 font-display text-base text-ink-100">
+                    {comparisonResult.feedbackNote}
+                  </p>
                 </div>
               </div>
 
-              {/* Mappa Dettagliata Parola per Parola */}
-              <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2">
-                  Verifica Fonetica Dettagliata:
+              <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                <span className="rounded border border-go/30 bg-go/10 px-2.5 py-1 text-go">
+                  ✓ {comparisonResult.stats.correctWords} esatte
                 </span>
-                <div className="p-4 rounded-xl bg-studio-panel/50 border border-studio-border flex flex-wrap gap-2 leading-relaxed text-sm sm:text-base">
-                  {comparisonResult.words.map((word) => {
-                    if (word.status === 'correct') {
-                      return (
-                        <span
-                          key={word.id}
-                          className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium"
-                          title="Pronunciata correttamente"
-                        >
-                          {word.text}
-                        </span>
-                      );
-                    }
-                    if (word.status === 'wrong') {
-                      return (
-                        <span
-                          key={word.id}
-                          className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium relative group cursor-help"
-                          title={`Hai detto: "${word.recognizedAs || 'non chiaro'}"`}
-                        >
-                          {word.text}
-                          <span className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-amber-200 text-[10px] rounded whitespace-nowrap z-10 border border-amber-500/30">
-                            Detto: {word.recognizedAs}
-                          </span>
-                        </span>
-                      );
-                    }
-                    // omitted
+                <span className="rounded border border-cue/30 bg-cue/10 px-2.5 py-1 text-cue">
+                  ~ {comparisonResult.stats.wrongWords} imprecise
+                </span>
+                <span className="rounded border border-tally/30 bg-tally/10 px-2.5 py-1 text-tally">
+                  ✗ {comparisonResult.stats.omittedWords} omesse
+                </span>
+              </div>
+            </div>
+
+            {/* Mappa parola per parola */}
+            <div>
+              <span className="silk mb-2.5 block">Allineamento parola per parola sul copione</span>
+              <div className="flex flex-wrap gap-1.5 rounded-lg border border-ink-800 bg-ink-900 p-4 font-display text-lg leading-relaxed">
+                {comparisonResult.words.map((word) => {
+                  if (word.status === 'correct') {
                     return (
                       <span
                         key={word.id}
-                        className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 line-through font-medium"
-                        title="Parola omessa o saltata"
+                        className="rounded border border-go/30 bg-go/10 px-2 py-0.5 text-go"
+                        title="Pronunciata correttamente"
                       >
                         {word.text}
                       </span>
                     );
-                  })}
-                </div>
+                  }
+                  if (word.status === 'wrong') {
+                    return (
+                      <span
+                        key={word.id}
+                        className="group relative cursor-help rounded border border-cue/40 bg-cue/15 px-2 py-0.5 text-cue"
+                        title={`Rilevato: "${word.recognizedAs || '—'}"`}
+                      >
+                        {word.text}
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded border border-cue/40 bg-ink-950 px-2 py-1 font-mono text-[10px] text-cue shadow-lg group-hover:block">
+                          Udito: “{word.recognizedAs}”
+                        </span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <span
+                      key={word.id}
+                      className="rounded border border-tally/30 bg-tally/10 px-2 py-0.5 text-tally line-through"
+                      title="Parola omessa"
+                    >
+                      {word.text}
+                    </span>
+                  );
+                })}
               </div>
-
-              {/* Trascrizione Grezza Rilevata */}
-              <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-1.5">
-                  Trascrizione Audio Rilevata (Whisper):
-                </span>
-                <div className="p-3 rounded-xl bg-studio-panel/30 border border-studio-border text-xs text-studio-muted font-mono">
-                  "{comparisonResult.spokenText || 'Nessun testo rilevato'}"
-                </div>
-              </div>
-
-              {/* Bottone per riprovare */}
-              <div className="flex justify-end pt-2">
-                <button
-                  onClick={handleStartRecording}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-studio-panel hover:bg-studio-border text-studio-text text-xs font-semibold border border-studio-border transition-all"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Registra un Altro Take</span>
-                </button>
-              </div>
-
             </div>
-          )}
 
-        </div>
+            {/* Trascrizione rilevata */}
+            <div>
+              <span className="silk mb-1.5 block">Trascrizione grezza rilevata</span>
+              <p className="rounded-lg border border-ink-800 bg-ink-900 p-3 font-mono text-xs text-ink-300">
+                “{comparisonResult.spokenText || 'Nessun parlato rilevato'}”
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={handleStartRecording} className="btn btn-ghost text-xs">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Incidi un altro take
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };

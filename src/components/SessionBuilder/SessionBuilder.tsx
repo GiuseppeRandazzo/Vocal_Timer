@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  ListMusic, 
-  Play, 
-  ArrowUp, 
-  ArrowDown, 
-  Trash2, 
-  Plus, 
-  Bookmark, 
-  Clock, 
-  Check, 
-  Save, 
-  Layers
+import {
+  ArrowDown,
+  ArrowUp,
+  Bookmark,
+  Check,
+  GripVertical,
+  Play,
+  Plus,
+  Save,
+  Trash2,
 } from 'lucide-react';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useExerciseStore } from '../../store/useExerciseStore';
 import { useTimerStore } from '../../store/useTimerStore';
+import { CATEGORY_LABELS, cn, formatTime, pad2 } from '../../lib/ui';
+import { DifficultyMeter } from '../ui/primitives';
+import { Modal } from '../ui/Modal';
 
 interface SessionBuilderProps {
   onOpenTimer: () => void;
@@ -36,18 +37,18 @@ export const SessionBuilder: React.FC<SessionBuilderProps> = ({
     deleteCustomSession,
   } = useSessionStore();
 
-  const allExercises = useExerciseStore((state) => state.exercises);
+  const allExercises = useExerciseStore((s) => s.exercises);
   const { initExercise, start } = useTimerStore();
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const [sessionName, setSessionName] = useState('');
   const [sessionDesc, setSessionDesc] = useState('');
   const [isSavingModal, setIsSavingModal] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Calcolo tempo totale della scaletta
   const totalSeconds = activeQueue.reduce((acc, curr) => acc + curr.durationSeconds, 0);
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const remainingSecs = totalSeconds % 60;
 
   const handleStartWorkout = () => {
     if (activeQueue.length === 0) return;
@@ -72,8 +73,8 @@ export const SessionBuilder: React.FC<SessionBuilderProps> = ({
 
     saveCustomSession(
       sessionName.trim(),
-      sessionDesc.trim() || 'Sessione vocale personalizzata',
-      activeQueue.map((e) => e.id)
+      sessionDesc.trim() || 'Programma vocale personalizzato',
+      activeQueue.map((ex) => ex.id)
     );
 
     setSaveSuccess(true);
@@ -82,90 +83,95 @@ export const SessionBuilder: React.FC<SessionBuilderProps> = ({
       setIsSavingModal(false);
       setSessionName('');
       setSessionDesc('');
-    }, 1200);
+    }, 1000);
   };
 
   return (
-    <div className="space-y-8">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-8 animate-rise">
+      {/* Intestazione */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-            <ListMusic className="w-6 h-6 text-cyan-neon" />
-            Session Builder & Scaletta
-          </h2>
-          <p className="text-xs sm:text-sm text-studio-muted mt-0.5">
-            Crea sequenze di riscaldamento vocale su misura per i tuoi turni o lezioni
+          <span className="silk">CH-03 · Banco di montaggio</span>
+          <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-ink-100 sm:text-4xl">
+            Scaletta & Programmi
+          </h1>
+          <p className="mt-1 text-sm text-ink-400">
+            Trascina i take per riordinare la sequenza di riscaldamento o carica un programma predefinito.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsSavingModal(true)}
             disabled={activeQueue.length === 0}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-studio-panel hover:bg-studio-border border border-studio-border text-studio-text font-semibold text-xs transition-all disabled:opacity-40"
+            className="btn btn-ghost"
           >
-            <Bookmark className="w-3.5 h-3.5 text-cyan-neon" />
-            <span>Salva Scaletta</span>
+            <Bookmark className="h-4 w-4 text-signal" />
+            Salva programma
           </button>
 
           <button
             onClick={handleStartWorkout}
             disabled={activeQueue.length === 0}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-tr from-cyan-neon to-cyan-500 text-black font-bold text-xs sm:text-sm shadow-lg shadow-cyan-neon/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-40"
+            className="btn btn-primary"
           >
-            <Play className="w-4 h-4 fill-current" />
-            <span>Avvia Workout Ora</span>
+            <Play className="h-4 w-4 fill-current" />
+            Avvia sessione ({formatTime(totalSeconds)})
           </button>
         </div>
       </div>
 
-      {/* Preset Sessions Bar */}
-      <div>
-        <label className="block text-xs font-semibold uppercase tracking-wider text-studio-muted mb-2.5">
-          Preset Consigliati da Studio:
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {sessions.map((s) => (
+      {/* Programmi salvati / Preset */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="silk text-ink-400">Programmi memorizzati</span>
+          <span className="silk">{pad2(sessions.length)} slot</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-3">
+          {sessions.map((s, idx) => (
             <div
               key={s.id}
-              className="p-4 rounded-2xl bg-studio-panel border border-studio-border hover:border-cyan-neon/40 transition-all flex flex-col justify-between group"
+              className="panel flex flex-col justify-between p-5 transition-colors hover:border-ink-600"
             >
               <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <h4 className="text-sm font-bold text-white group-hover:text-cyan-neon transition-colors">
-                    {s.name}
-                  </h4>
-                  {s.isPreset && (
-                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-studio-darkest text-studio-muted border border-studio-border">
-                      PRESET
-                    </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] text-signal">PRG-{pad2(idx + 1)}</span>
+                  {s.isPreset ? (
+                    <span className="chip">Studio preset</span>
+                  ) : (
+                    <span className="chip border-signal/30 text-signal">Custom</span>
                   )}
                 </div>
-                <p className="text-xs text-studio-muted line-clamp-2 mb-3">
+
+                <h3 className="mt-2.5 font-display text-lg font-medium text-ink-100">
+                  {s.name}
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-ink-400">
                   {s.description}
                 </p>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-studio-border/50">
-                <span className="text-xs font-mono text-cyan-neon">
-                  {s.exerciseIds.length} esercizi
+              <div className="mt-5 flex items-center justify-between border-t border-ink-800 pt-3">
+                <span className="font-mono text-xs text-ink-300">
+                  {pad2(s.exerciseIds.length)} take
                 </span>
+
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => loadSessionIntoQueue(s.id, allExercises)}
-                    className="px-2.5 py-1 rounded-lg bg-cyan-neon/15 hover:bg-cyan-neon/25 text-cyan-neon text-xs font-semibold border border-cyan-neon/30 transition-all"
+                    className="btn btn-signal px-3 py-1 text-xs"
                   >
-                    Carica in Scaletta
+                    Carica in banco
                   </button>
                   {!s.isPreset && (
                     <button
                       onClick={() => deleteCustomSession(s.id)}
-                      className="p-1 rounded-lg text-studio-muted hover:text-rose-400"
-                      title="Elimina sessione"
+                      className="icon-btn h-8 w-8 text-ink-500 hover:text-tally"
+                      title="Elimina programma"
+                      aria-label="Elimina programma"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
@@ -173,39 +179,28 @@ export const SessionBuilder: React.FC<SessionBuilderProps> = ({
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Current Active Queue (Scaletta Attiva) */}
-      <div className="bg-studio-darker border border-studio-border rounded-3xl p-6 space-y-4">
-        
-        {/* Scaletta Header & Stats */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-studio-border">
+      {/* Coda attiva con Drag & Drop */}
+      <section className="panel overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-800 px-5 py-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-white flex items-center gap-2">
-              <Layers className="w-4 h-4 text-cyan-neon" />
-              Scaletta Attiva
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-studio-panel border border-studio-border text-xs font-mono text-studio-muted">
-              {activeQueue.length} esercizi
-            </span>
-            <span className="flex items-center gap-1 text-xs font-mono text-cyan-neon">
-              <Clock className="w-3.5 h-3.5" />
-              {totalMinutes}m {remainingSecs}s totali
+            <span className="silk text-ink-300">Sequenza attiva</span>
+            <span className="h-3 w-px bg-ink-700" />
+            <span className="font-mono text-xs text-signal">
+              {pad2(activeQueue.length)} take · {formatTime(totalSeconds)}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenExerciseLibrary}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-studio-panel hover:bg-studio-border border border-studio-border text-xs text-studio-text transition-all"
-            >
-              <Plus className="w-3.5 h-3.5 text-cyan-neon" />
-              <span>Aggiungi Dalla Libreria</span>
+            <button onClick={onOpenExerciseLibrary} className="btn btn-ghost px-3 py-1.5 text-xs">
+              <Plus className="h-3.5 w-3.5 text-signal" />
+              Aggiungi dalla libreria
             </button>
             {activeQueue.length > 0 && (
               <button
                 onClick={clearActiveQueue}
-                className="px-3 py-1.5 rounded-xl text-xs text-studio-muted hover:text-rose-400 transition-all"
+                className="btn btn-quiet px-2.5 py-1.5 text-xs text-ink-500 hover:text-tally"
               >
                 Svuota
               </button>
@@ -213,147 +208,170 @@ export const SessionBuilder: React.FC<SessionBuilderProps> = ({
           </div>
         </div>
 
-        {/* Scaletta Exercise Items */}
         {activeQueue.length === 0 ? (
-          <div className="p-8 text-center text-studio-muted">
-            <p className="text-sm mb-3">La scaletta è vuota. Seleziona un preset o aggiungi esercizi dalla libreria.</p>
-            <button
-              onClick={onOpenExerciseLibrary}
-              className="px-4 py-2 rounded-xl bg-cyan-neon text-black font-bold text-xs"
-            >
-              Esplora Libreria Esercizi
+          <div className="p-12 text-center">
+            <span className="silk">Nessun take in sequenza</span>
+            <p className="mt-2 font-display text-xl text-ink-300">
+              La scaletta è vuota. Carica un programma qui sopra o scegli i copioni dalla libreria.
+            </p>
+            <button onClick={onOpenExerciseLibrary} className="btn btn-primary mt-4 text-xs">
+              Apri Libreria Copioni
             </button>
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {activeQueue.map((exercise, index) => (
-              <div
-                key={`${exercise.id}-${index}`}
-                className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-studio-panel/70 border border-studio-border hover:border-studio-muted/40 transition-all"
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <span className="w-6 text-center font-mono text-xs font-bold text-studio-muted">
-                    #{index + 1}
-                  </span>
-                  <div className="overflow-hidden">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs sm:text-sm font-bold text-white truncate">
-                        {exercise.title}
-                      </h4>
-                      <span className="text-[10px] text-cyan-neon font-mono shrink-0">
-                        {exercise.durationSeconds}s
-                      </span>
+          <div className="divide-y divide-ink-800/80">
+            {activeQueue.map((exercise, index) => {
+              const isDragged = draggedIndex === index;
+              const isDragOver = dragOverIndex === index;
+              return (
+                <div
+                  key={`${exercise.id}-${index}`}
+                  draggable
+                  onDragStart={() => setDraggedIndex(index)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverIndex(index);
+                  }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={() => {
+                    if (draggedIndex !== null && draggedIndex !== index) {
+                      reorderActiveQueue(draggedIndex, index);
+                    }
+                    setDraggedIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  className={cn(
+                    'flex items-center justify-between gap-3 px-4 py-3.5 transition-colors sm:px-6',
+                    isDragged && 'opacity-40',
+                    isDragOver ? 'bg-signal/10' : 'hover:bg-ink-850/70'
+                  )}
+                >
+                  <div className="flex min-w-0 items-center gap-3.5">
+                    <span
+                      className="cursor-grab text-ink-600 hover:text-ink-300 active:cursor-grabbing"
+                      title="Trascina per riordinare"
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </span>
+
+                    <span className="font-mono text-xs text-ink-500">{pad2(index + 1)}</span>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="truncate font-display text-base font-medium text-ink-100">
+                          {exercise.title}
+                        </h4>
+                        <span className="silk text-[9px] text-ink-400">
+                          {CATEGORY_LABELS[exercise.category]}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-ink-400">
+                        “{exercise.text}”
+                      </p>
                     </div>
-                    <p className="text-[11px] text-studio-muted truncate max-w-md">
-                      {exercise.text}
-                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="hidden sm:block">
+                      <DifficultyMeter level={exercise.difficulty} showLabel={false} />
+                    </div>
+                    <span className="w-12 text-right font-mono text-xs text-signal">
+                      {formatTime(exercise.durationSeconds)}
+                    </span>
+
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => handleMoveUp(index)}
+                        disabled={index === 0}
+                        className="icon-btn h-8 w-8"
+                        title="Sposta su"
+                        aria-label="Sposta su"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveDown(index)}
+                        disabled={index === activeQueue.length - 1}
+                        className="icon-btn h-8 w-8"
+                        title="Sposta giù"
+                        aria-label="Sposta giù"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => removeFromActiveQueue(index)}
+                        className="icon-btn h-8 w-8 text-ink-500 hover:text-tally"
+                        title="Rimuovi dalla scaletta"
+                        aria-label="Rimuovi dalla scaletta"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {/* Sposta Su */}
-                  <button
-                    onClick={() => handleMoveUp(index)}
-                    disabled={index === 0}
-                    className="p-1.5 rounded-lg text-studio-muted hover:text-white disabled:opacity-20 transition-all"
-                    title="Sposta prima"
-                  >
-                    <ArrowUp className="w-3.5 h-3.5" />
-                  </button>
-
-                  {/* Sposta Giù */}
-                  <button
-                    onClick={() => handleMoveDown(index)}
-                    disabled={index === activeQueue.length - 1}
-                    className="p-1.5 rounded-lg text-studio-muted hover:text-white disabled:opacity-20 transition-all"
-                    title="Sposta dopo"
-                  >
-                    <ArrowDown className="w-3.5 h-3.5" />
-                  </button>
-
-                  {/* Rimuovi */}
-                  <button
-                    onClick={() => removeFromActiveQueue(index)}
-                    className="p-1.5 rounded-lg text-studio-muted hover:text-rose-400 transition-all ml-1"
-                    title="Rimuovi dalla scaletta"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
+      </section>
 
-      </div>
-
-      {/* Modale Salva Nuova Sessione */}
-      {isSavingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-md bg-studio-darker border border-studio-border rounded-3xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-cyan-neon" />
-              Salva Sessione Preferita
-            </h3>
-            <p className="text-xs text-studio-muted">
-              Salva l'attuale scaletta ({activeQueue.length} esercizi, {totalMinutes}m {remainingSecs}s) per riutilizzarla quando vuoi.
-            </p>
-
-            <form onSubmit={handleSaveSession} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-studio-muted mb-1">Nome Sessione</label>
-                <input
-                  type="text"
-                  required
-                  value={sessionName}
-                  onChange={(e) => setSessionName(e.target.value)}
-                  placeholder="Es. Warmup Prima di Recitare"
-                  className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-studio-muted mb-1">Descrizione (Opzionale)</label>
-                <input
-                  type="text"
-                  value={sessionDesc}
-                  onChange={(e) => setSessionDesc(e.target.value)}
-                  placeholder="Es. Focus sulle sibilanti e controllo diaframmatico"
-                  className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSavingModal(false)}
-                  className="px-4 py-2 rounded-xl bg-studio-panel text-xs text-studio-muted hover:text-white"
-                >
-                  Annulla
-                </button>
-                <button
-                  type="submit"
-                  disabled={saveSuccess}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-neon text-black font-semibold text-xs hover:bg-cyan-400 transition-all"
-                >
-                  {saveSuccess ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Salvata!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Salva Template</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+      {/* Modale salvataggio programma */}
+      <Modal
+        isOpen={isSavingModal}
+        onClose={() => setIsSavingModal(false)}
+        channel="CH-03 · Memoria banco"
+        title="Salva Programma di Riscaldamento"
+        subtitle={`Memorizza questa sequenza (${pad2(activeQueue.length)} take · ${formatTime(totalSeconds)}) per richiamarla con un click.`}
+        size="md"
+      >
+        <form onSubmit={handleSaveSession} className="space-y-4">
+          <div>
+            <label className="silk mb-1.5 block">Nome del programma</label>
+            <input
+              type="text"
+              required
+              value={sessionName}
+              onChange={(e) => setSessionName(e.target.value)}
+              placeholder="Es. Turno Mattutino Doppiaggio"
+              className="input"
+            />
           </div>
-        </div>
-      )}
 
+          <div>
+            <label className="silk mb-1.5 block">Note / Descrizione</label>
+            <input
+              type="text"
+              value={sessionDesc}
+              onChange={(e) => setSessionDesc(e.target.value)}
+              placeholder="Es. Focus sibilanti e diaframma prima di entrare in sala"
+              className="input"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setIsSavingModal(false)} className="btn btn-ghost">
+              Annulla
+            </button>
+            <button type="submit" disabled={saveSuccess} className="btn btn-primary">
+              {saveSuccess ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  Programma salvato
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  Memorizza
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

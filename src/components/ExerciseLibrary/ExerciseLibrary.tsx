@@ -1,27 +1,44 @@
 import React, { useState } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Play, 
-  ListPlus, 
-  Mic, 
-  Trash2, 
-  Sparkles, 
-  Target, 
-  Clock, 
-  BookOpen,
-  X
+import {
+  Highlighter,
+  ListPlus,
+  Mic,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { Exercise, ExerciseCategory, DifficultyLevel } from '../../types';
+import { DifficultyLevel, Exercise, ExerciseCategory } from '../../types';
 import { useExerciseStore } from '../../store/useExerciseStore';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useTimerStore } from '../../store/useTimerStore';
+import {
+  CATEGORY_LABELS,
+  cn,
+  DIFFICULTY_LABELS,
+  pad2,
+  usePersistentState,
+} from '../../lib/ui';
+import { DifficultyMeter, ScriptText } from '../ui/primitives';
+import { Modal } from '../ui/Modal';
 
 interface ExerciseLibraryProps {
   onSelectForVerification: (exercise: Exercise) => void;
   onOpenTimer: () => void;
   onOpenAIModal: () => void;
 }
+
+const CATEGORIES: { id: ExerciseCategory | 'all'; label: string }[] = [
+  { id: 'all', label: 'Tutti' },
+  { id: 'scioglilingua', label: 'Scioglilingua' },
+  { id: 'articolazione', label: 'Articolazione' },
+  { id: 'dizione-vocali', label: 'Vocali E/O' },
+  { id: 'respirazione', label: 'Respirazione' },
+  { id: 'velocita', label: 'Velocità' },
+  { id: 'risonanza', label: 'Risonanza' },
+];
 
 export const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   onSelectForVerification,
@@ -40,9 +57,16 @@ export const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     getFilteredExercises,
   } = useExerciseStore();
 
-  const addToActiveQueue = useSessionStore((state) => state.addToActiveQueue);
+  const addToActiveQueue = useSessionStore((s) => s.addToActiveQueue);
   const { initExercise, start } = useTimerStore();
 
+  const [highlightPhonemes, setHighlightPhonemes] = usePersistentState<boolean>(
+    'vt_lib_highlight',
+    true
+  );
+  const [queuedFeedbackId, setQueuedFeedbackId] = useState<string | null>(null);
+
+  // Stato modale nuovo esercizio manuale
   const [isCreatingManual, setIsCreatingManual] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<ExerciseCategory>('scioglilingua');
@@ -61,6 +85,14 @@ export const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     onOpenTimer();
   };
 
+  const handleQueue = (exercise: Exercise) => {
+    addToActiveQueue(exercise);
+    setQueuedFeedbackId(exercise.id);
+    setTimeout(() => {
+      setQueuedFeedbackId((curr) => (curr === exercise.id ? null : curr));
+    }, 1200);
+  };
+
   const handleCreateExercise = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newText.trim()) return;
@@ -69,10 +101,10 @@ export const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
       id: `custom-${Date.now()}`,
       title: newTitle.trim(),
       category: newCategory,
-      targetPhoneme: newTargetPhoneme.trim() || 'Generale',
+      targetPhoneme: newTargetPhoneme.trim() || 'Articolazione generale',
       difficulty: newDifficulty,
       text: newText.trim(),
-      tips: newTips.trim() || 'Respira profondamente ed emetti la voce con fluidità.',
+      tips: newTips.trim() || 'Respira profondamente con il diaframma e scandisci ogni sillaba.',
       durationSeconds: Number(newDuration) || 60,
       isCustom: true,
       createdAt: new Date().toISOString(),
@@ -80,339 +112,337 @@ export const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
 
     addExercise(customEx);
     setIsCreatingManual(false);
-    // Reset form
     setNewTitle('');
     setNewTargetPhoneme('');
     setNewText('');
     setNewTips('');
   };
 
-  const categories: { id: ExerciseCategory | 'all'; label: string }[] = [
-    { id: 'all', label: 'Tutti' },
-    { id: 'scioglilingua', label: 'Scioglilingua' },
-    { id: 'articolazione', label: 'Articolazione' },
-    { id: 'dizione-vocali', label: 'Vocali Aperte/Chiuse' },
-    { id: 'respirazione', label: 'Respirazione' },
-    { id: 'velocita', label: 'Velocità' },
-    { id: 'risonanza', label: 'Risonanza' },
-  ];
-
   return (
-    <div className="space-y-6">
-      
-      {/* Top Header & Search Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 animate-rise">
+      {/* Intestazione */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-cyan-neon" />
-            Libreria Esercizi di Dizione
-          </h2>
-          <p className="text-xs sm:text-sm text-studio-muted mt-0.5">
-            Esercizi professionali per doppiatori, attori e cantanti ({filteredExercises.length} disponibili)
+          <span className="silk">CH-02 · Archivio copioni</span>
+          <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-ink-100 sm:text-4xl">
+            Libreria di Dizione
+          </h1>
+          <p className="mt-1 text-sm text-ink-400">
+            {pad2(filteredExercises.length)} esercizi pronti per il leggio — filtra per fonema o genera nuovi testi con l'AI.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={onOpenAIModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-all shadow-md shadow-violet-600/20"
+            onClick={() => setHighlightPhonemes(!highlightPhonemes)}
+            className={cn(
+              'btn text-xs',
+              highlightPhonemes ? 'btn-signal' : 'btn-ghost'
+            )}
+            title="Evidenzia i fonemi target nei testi"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Genera con AI</span>
+            <Highlighter className="h-3.5 w-3.5" />
+            Fonemi
           </button>
-          <button
-            onClick={() => setIsCreatingManual(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-studio-panel hover:bg-studio-border border border-studio-border text-studio-text font-semibold text-xs transition-all"
-          >
-            <Plus className="w-3.5 h-3.5 text-cyan-neon" />
-            <span>Aggiungi Manuale</span>
+          <button onClick={() => setIsCreatingManual(true)} className="btn btn-ghost">
+            <Plus className="h-4 w-4" />
+            Nuovo copione
+          </button>
+          <button onClick={onOpenAIModal} className="btn btn-primary">
+            <Sparkles className="h-4 w-4" />
+            Genera con AI
           </button>
         </div>
       </div>
 
-      {/* Search & Filters */}
-      <div className="space-y-3 bg-studio-darker p-4 rounded-2xl border border-studio-border">
-        {/* Search input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-studio-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cerca per parola, titolo, fonema (es. 'Trentini', 'Sibilanti', 'Kiwi')..."
-            className="w-full pl-10 pr-4 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs sm:text-sm text-white placeholder-studio-muted focus:outline-none focus:border-cyan-neon"
-          />
+      {/* Console di filtraggio */}
+      <div className="panel space-y-4 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cerca titolo, testo o fonema (es. 'Trentini', 'Sibilanti', 'Kiwi')…"
+              className="input pl-10 pr-9"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-500 hover:text-ink-200"
+                aria-label="Pulisci ricerca"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Selettore difficoltà */}
+          <div className="seg self-start">
+            {(['all', 'principiante', 'intermedio', 'estremo'] as const).map((diff) => (
+              <button
+                key={diff}
+                data-active={selectedDifficulty === diff}
+                onClick={() => setSelectedDifficulty(diff)}
+                className="seg-item text-xs"
+              >
+                {diff === 'all' ? 'Tutte' : DIFFICULTY_LABELS[diff]}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Category Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                selectedCategory === cat.id
-                  ? 'bg-cyan-neon/15 text-cyan-neon border border-cyan-neon/40 shadow-sm'
-                  : 'bg-studio-panel text-studio-muted hover:text-white border border-transparent'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Difficulty Filter */}
-        <div className="flex items-center gap-2 pt-1 border-t border-studio-border/50 text-xs">
-          <span className="text-studio-muted font-medium">Difficoltà:</span>
-          {(['all', 'principiante', 'intermedio', 'estremo'] as const).map((diff) => (
-            <button
-              key={diff}
-              onClick={() => setSelectedDifficulty(diff)}
-              className={`px-2.5 py-1 rounded-md capitalize transition-all ${
-                selectedDifficulty === diff
-                  ? 'bg-studio-panel text-white font-semibold border border-studio-border'
-                  : 'text-studio-muted hover:text-white'
-              }`}
-            >
-              {diff === 'all' ? 'Tutte' : diff}
-            </button>
-          ))}
+        {/* Pillole categoria */}
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pt-1">
+          {CATEGORIES.map((cat) => {
+            const active = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={cn(
+                  'whitespace-nowrap rounded-md border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition',
+                  active
+                    ? 'border-signal/50 bg-signal/10 text-signal'
+                    : 'border-ink-800 bg-ink-950 text-ink-400 hover:border-ink-700 hover:text-ink-200'
+                )}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Grid of Exercises */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-        {filteredExercises.map((exercise) => (
-          <div
+      {/* Griglia dei copioni */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {filteredExercises.map((exercise, index) => (
+          <article
             key={exercise.id}
-            className="group relative flex flex-col justify-between bg-studio-panel/80 hover:bg-studio-panel border border-studio-border hover:border-studio-muted/50 rounded-2xl p-5 transition-all shadow-md hover:shadow-xl"
+            className="panel group flex flex-col justify-between overflow-hidden transition-colors hover:border-ink-600"
           >
             <div>
-              {/* Header Badges */}
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider ${
-                    exercise.difficulty === 'principiante'
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                      : exercise.difficulty === 'intermedio'
-                        ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/20'
-                        : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
-                  }`}>
-                    {exercise.difficulty}
-                  </span>
-                  <span className="text-[11px] text-studio-muted bg-studio-darkest px-2 py-0.5 rounded border border-studio-border">
-                    {exercise.category}
-                  </span>
+              {/* Barra superiore scheda */}
+              <div className="flex items-center justify-between gap-2 border-b border-ink-800/80 px-5 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-[11px] text-ink-500">{pad2(index + 1)}</span>
+                  <span className="h-3 w-px bg-ink-800" />
+                  <span className="silk text-ink-300">{CATEGORY_LABELS[exercise.category]}</span>
+                  {exercise.isAIGenerated && (
+                    <span className="chip border-signal/30 bg-signal/[0.06] text-signal">
+                      <Sparkles className="h-2.5 w-2.5" /> AI
+                    </span>
+                  )}
                 </div>
-
-                <div className="flex items-center gap-1.5 text-xs text-studio-muted font-mono">
-                  <Clock className="w-3.5 h-3.5 text-cyan-neon" />
-                  <span>{exercise.durationSeconds}s</span>
+                <div className="flex items-center gap-3">
+                  <DifficultyMeter level={exercise.difficulty} showLabel={false} />
+                  <span className="silk text-ink-400">{exercise.durationSeconds}s</span>
                 </div>
               </div>
 
-              {/* Title & Target Phoneme */}
-              <h3 className="text-base font-bold text-white mb-1.5 group-hover:text-cyan-neon transition-colors">
-                {exercise.title}
-              </h3>
-              
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-studio-darkest border border-studio-border text-[11px] text-cyan-200 mb-3">
-                <Target className="w-3 h-3 text-cyan-neon" />
-                <span>Target: <strong>{exercise.targetPhoneme}</strong></span>
+              {/* Contenuto copione */}
+              <div className="p-5 sm:p-6">
+                <h3 className="font-display text-xl font-medium leading-snug text-ink-100 group-hover:text-signal transition-colors">
+                  {exercise.title}
+                </h3>
+
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="silk">Target</span>
+                  <span className="font-mono text-xs text-signal">{exercise.targetPhoneme}</span>
+                </div>
+
+                <div className="well mt-4 p-4">
+                  <ScriptText
+                    text={`“${exercise.text}”`}
+                    targetPhoneme={exercise.targetPhoneme}
+                    highlight={highlightPhonemes}
+                    className="font-display text-[17px] font-light leading-relaxed text-ink-100"
+                  />
+                </div>
+
+                <p className="mt-3 border-l-2 border-cue/70 pl-3 font-display text-xs italic text-ink-300">
+                  {exercise.tips}
+                </p>
               </div>
-
-              {/* Text */}
-              <p className="text-xs sm:text-sm text-slate-300 font-sans leading-relaxed line-clamp-3 mb-3">
-                "{exercise.text}"
-              </p>
-
-              {/* Tips preview */}
-              <p className="text-[11px] text-amber-300/80 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 line-clamp-2">
-                <strong>Coach:</strong> {exercise.tips}
-              </p>
             </div>
 
-            {/* Actions Bar */}
-            <div className="mt-4 pt-3 border-t border-studio-border/70 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+            {/* Piede d'azione */}
+            <div className="flex items-center justify-between gap-2 border-t border-ink-800/80 bg-ink-950/50 px-5 py-3">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => handlePlayNow(exercise)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-neon text-black font-semibold text-xs hover:bg-cyan-400 transition-all shadow-sm"
-                  title="Carica e avvia nel timer"
+                  className="btn btn-primary px-3 py-1.5 text-xs"
+                  title="Porta sul leggio e avvia il timer"
                 >
-                  <Play className="w-3 h-3 fill-current" />
-                  <span>Avvia</span>
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                  Sul leggio
                 </button>
 
                 <button
-                  onClick={() => addToActiveQueue(exercise)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-studio-darkest hover:bg-studio-border text-studio-text text-xs border border-studio-border transition-all"
-                  title="Aggiungi alla scaletta attiva"
+                  onClick={() => handleQueue(exercise)}
+                  className="btn btn-ghost px-3 py-1.5 text-xs"
+                  title="Aggiungi in coda alla scaletta"
                 >
-                  <ListPlus className="w-3.5 h-3.5 text-cyan-neon" />
-                  <span>In Scaletta</span>
+                  <ListPlus className="h-3.5 w-3.5 text-signal" />
+                  {queuedFeedbackId === exercise.id ? 'Aggiunto ✓' : 'In scaletta'}
                 </button>
 
                 <button
                   onClick={() => onSelectForVerification(exercise)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-studio-darkest hover:bg-studio-border text-cyan-neon text-xs border border-cyan-neon/30 transition-all"
-                  title="Registra e verifica dizione"
+                  className="btn btn-rec px-3 py-1.5 text-xs"
+                  title="Registra e analizza la dizione su questo testo"
                 >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>Verifica</span>
+                  <Mic className="h-3.5 w-3.5 text-tally" />
+                  Prova REC
                 </button>
               </div>
 
-              {/* Delete button (only custom or AI) */}
               {(exercise.isCustom || exercise.isAIGenerated) && (
                 <button
                   onClick={() => deleteExercise(exercise.id)}
-                  className="p-1.5 rounded-lg text-studio-muted hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                  className="icon-btn h-8 w-8 text-ink-500 hover:text-tally"
                   title="Elimina esercizio"
+                  aria-label="Elimina esercizio"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               )}
             </div>
-          </div>
+          </article>
         ))}
       </div>
 
       {filteredExercises.length === 0 && (
-        <div className="p-12 text-center bg-studio-darker border border-studio-border rounded-2xl text-studio-muted">
-          <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-30 text-cyan-neon" />
-          <p className="text-sm">Nessun esercizio trovato per i criteri selezionati.</p>
+        <div className="panel p-12 text-center">
+          <span className="silk">Nessuna corrispondenza</span>
+          <p className="mt-2 font-display text-xl text-ink-300">
+            Nessun copione trovato con i filtri attuali.
+          </p>
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setSelectedCategory('all');
+              setSelectedDifficulty('all');
+            }}
+            className="btn btn-ghost mt-4 text-xs"
+          >
+            Reimposta filtri
+          </button>
         </div>
       )}
 
-      {/* Modal Aggiungi Esercizio Manuale */}
-      {isCreatingManual && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-lg bg-studio-darker border border-studio-border rounded-3xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-studio-border pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-cyan-neon" />
-                Nuovo Esercizio di Dizione Manuale
-              </h3>
-              <button
-                onClick={() => setIsCreatingManual(false)}
-                className="p-1.5 rounded-lg text-studio-muted hover:text-white"
+      {/* Modale creazione nuovo copione manuale */}
+      <Modal
+        isOpen={isCreatingManual}
+        onClose={() => setIsCreatingManual(false)}
+        channel="CH-02 · Redazione"
+        title="Nuovo Copione Manuale"
+        subtitle="Aggiungi un tuo scioglilingua o esercizio personale all'archivio locale."
+        size="md"
+      >
+        <form onSubmit={handleCreateExercise} className="space-y-4">
+          <div>
+            <label className="silk mb-1.5 block">Titolo dell'esercizio</label>
+            <input
+              type="text"
+              required
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Es. Articolazione rapida delle dentali"
+              className="input"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="silk mb-1.5 block">Categoria</label>
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value as ExerciseCategory)}
+                className="input"
               >
-                <X className="w-4 h-4" />
-              </button>
+                <option value="scioglilingua">Scioglilingua</option>
+                <option value="articolazione">Articolazione</option>
+                <option value="dizione-vocali">Vocali aperte/chiuse</option>
+                <option value="respirazione">Respirazione</option>
+                <option value="velocita">Velocità</option>
+                <option value="risonanza">Risonanza</option>
+              </select>
             </div>
 
-            <form onSubmit={handleCreateExercise} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-studio-muted mb-1">Titolo</label>
-                <input
-                  type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Es. Scioglilingua del Fiume Rosso"
-                  className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-studio-muted mb-1">Categoria</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value as ExerciseCategory)}
-                    className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                  >
-                    <option value="scioglilingua">Scioglilingua</option>
-                    <option value="articolazione">Articolazione</option>
-                    <option value="dizione-vocali">Vocali Aperte/Chiuse</option>
-                    <option value="respirazione">Respirazione</option>
-                    <option value="velocita">Velocità</option>
-                    <option value="risonanza">Risonanza</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-studio-muted mb-1">Difficoltà</label>
-                  <select
-                    value={newDifficulty}
-                    onChange={(e) => setNewDifficulty(e.target.value as DifficultyLevel)}
-                    className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                  >
-                    <option value="principiante">Principiante</option>
-                    <option value="intermedio">Intermedio</option>
-                    <option value="estremo">Scioglilingua Estremo</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-studio-muted mb-1">Fonema Target</label>
-                  <input
-                    type="text"
-                    value={newTargetPhoneme}
-                    onChange={(e) => setNewTargetPhoneme(e.target.value)}
-                    placeholder="Es. 'R vibrante', 'S sorda'"
-                    className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-studio-muted mb-1">Durata (secondi)</label>
-                  <input
-                    type="number"
-                    min="15"
-                    max="300"
-                    value={newDuration}
-                    onChange={(e) => setNewDuration(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-studio-muted mb-1">Testo dello Scioglilingua / Esercizio</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={newText}
-                  onChange={(e) => setNewText(e.target.value)}
-                  placeholder="Inserisci il testo completo da pronunciare..."
-                  className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-studio-muted mb-1">Consiglio Vocale / Postura</label>
-                <input
-                  type="text"
-                  value={newTips}
-                  onChange={(e) => setNewTips(e.target.value)}
-                  placeholder="Es. 'Allena la punta della lingua senza forzare la gola'"
-                  className="w-full px-3 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-white focus:outline-none focus:border-cyan-neon"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingManual(false)}
-                  className="px-4 py-2 rounded-xl bg-studio-panel border border-studio-border text-xs text-studio-muted hover:text-white"
-                >
-                  Annulla
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-cyan-neon text-black font-semibold text-xs hover:bg-cyan-400"
-                >
-                  Salva Esercizio
-                </button>
-              </div>
-            </form>
+            <div>
+              <label className="silk mb-1.5 block">Difficoltà</label>
+              <select
+                value={newDifficulty}
+                onChange={(e) => setNewDifficulty(e.target.value as DifficultyLevel)}
+                className="input"
+              >
+                <option value="principiante">Principiante</option>
+                <option value="intermedio">Intermedio</option>
+                <option value="estremo">Estremo</option>
+              </select>
+            </div>
           </div>
-        </div>
-      )}
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="silk mb-1.5 block">Fonema target</label>
+              <input
+                type="text"
+                value={newTargetPhoneme}
+                onChange={(e) => setNewTargetPhoneme(e.target.value)}
+                placeholder="Es. R vibrante, S sorda…"
+                className="input"
+              />
+            </div>
+
+            <div>
+              <label className="silk mb-1.5 block">Durata (secondi)</label>
+              <input
+                type="number"
+                min={15}
+                max={300}
+                value={newDuration}
+                onChange={(e) => setNewDuration(Number(e.target.value))}
+                className="input font-mono"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="silk mb-1.5 block">Testo del copione</label>
+            <textarea
+              required
+              rows={3}
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              placeholder="Scrivi lo scioglilingua o le istruzioni di respirazione…"
+              className="input font-display text-base"
+            />
+          </div>
+
+          <div>
+            <label className="silk mb-1.5 block">Nota tecnica del Vocal Coach</label>
+            <input
+              type="text"
+              value={newTips}
+              onChange={(e) => setNewTips(e.target.value)}
+              placeholder="Es. Mantieni la mandibola morbida e appoggia sul diaframma"
+              className="input"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setIsCreatingManual(false)} className="btn btn-ghost">
+              Annulla
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Salva in archivio
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
